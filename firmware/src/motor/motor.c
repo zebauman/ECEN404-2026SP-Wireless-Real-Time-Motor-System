@@ -29,17 +29,20 @@ static void _motor_set_target_state(uint8_t new_state){
 
 /* PUBLIC API */
 
-void motor_init(void){
-
+void motor_boot(void){
     k_mutex_init(&m_stats_lock);
+    motor_init();
+}
 
+void motor_init(void){
     k_mutex_lock(&m_stats_lock, K_FOREVER);
 
     memset(&m_stats, 0, sizeof(m_stats)); // WIPE ALL THE DATA TO ZERO (EVEN PRE-EXISTING DATA)
     _motor_set_state(MOTOR_STATE_STOPPED);
 
-    _motor_set_flag_unlocked(MOTOR_FLAG_SYNC_BAD, false);
+    _motor_set_flag_unlocked(MOTOR_FLAG_SYNC_BAD,  false);
     _motor_set_flag_unlocked(MOTOR_FLAG_OVERHEAT,  false);
+    _motor_set_flag_unlocked(MOTOR_FLAG_STALL,     false);
 
     k_mutex_unlock(&m_stats_lock);
 }
@@ -82,6 +85,13 @@ void motor_set_overheat_warning(bool active){
     k_mutex_lock(&m_stats_lock, K_FOREVER);
     _motor_set_flag_unlocked(MOTOR_FLAG_OVERHEAT, active);
     k_mutex_unlock(&m_stats_lock);
+}
+
+void motor_set_stall_warning(bool active){
+    k_mutex_lock(&m_stats_lock, K_FOREVER);
+    _motor_set_flag_unlocked(MOTOR_FLAG_STALL, active);
+    k_mutex_unlock(&m_stats_lock);
+
 }
 
 void motor_trigger_estop(){
@@ -141,6 +151,14 @@ bool motor_is_overheated(void){
     k_mutex_unlock(&m_stats_lock);
     return val;
 }
+
+bool motor_is_stall(void){
+    k_mutex_lock(&m_stats_lock, K_FOREVER);
+    bool val = m_stats.motor_status & MOTOR_FLAG_STALL;
+    k_mutex_unlock(&m_stats_lock);
+    return val;
+}
+
 
 int32_t motor_get_speed(void){
     k_mutex_lock(&m_stats_lock, K_FOREVER);

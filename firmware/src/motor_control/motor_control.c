@@ -97,6 +97,7 @@ static void pid_control_thread(void *p1, void *p2, void *p3) {
                 LOG_ERR("STALL: TARGET=%d RPM, no movement for %u ms",
                         target_rpm, STALL_TIMEOUT_MS);
                         motor_trigger_estop();
+                        motor_set_stall_warning(true);
                         reset_control_state();
             }
         } else {

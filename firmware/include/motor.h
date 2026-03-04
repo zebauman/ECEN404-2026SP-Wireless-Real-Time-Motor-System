@@ -13,7 +13,7 @@
 #define MOTOR_STATE_STOPPED			0x00	// 0000
 #define MOTOR_STATE_RUNNING_SPEED	0x01	// 0001 - MOTOR IS ATTEMPTING TO REACH A CERTAIN RPM
 #define MOTOR_STATE_RUNNING_POS		0x02	// 0010 - MOTOR IS ATTEMPTING TO REACH A CERTAIN POS
-#define MOTOR_STATE_ESTOP			0x03	// 0010 (EMERGENCY STOP)
+#define MOTOR_STATE_ESTOP			0x03	// 0011 (EMERGENCY STOP)
 #define MOTOR_STATE_RESTART			0x04	// 0100 (SOFT START/CALIBRATING)
 #define MOTOR_STATE_FAULT			0x05	// 0101 (HARDWARE FAILURE)
 
@@ -22,6 +22,7 @@
 // UPPER NIBBLE: DIAGNOSTIC FLAGS (BITS 4-7) - CHECK IF THERE ARE ANY WARNINGS/ISSUES REGARDING THE MOTOR
 #define MOTOR_FLAG_SYNC_BAD			0x10	// 0001 0000 
 #define MOTOR_FLAG_OVERHEAT			0x20	// 0010 0000
+#define MOTOR_FLAG_STALL			0x40	// 0100 0000
 /** @todo ADD FLAG FOR MOTOR STALL -> ACTUAL RPM = 0, TARGET != 0; motor cannot move*/
 
 
@@ -52,7 +53,11 @@ struct motor_stats{
 
 
 // PUBLIC API - MOTOR CONTROL
-/** @brief Initialize motor hardware and clear stats */
+
+/** @brief Called from main() only and inits the motor stats and the mutex - only called once */
+void motor_boot(void);
+
+/** @brief Initialize motor hardware and clear stats (safe to call multiple times)*/
 void motor_init(void);
 
 // ACTUAL MOTOR STAT SETTERS
@@ -67,9 +72,10 @@ void motor_set_position(int32_t degrees);
 
 void motor_set_sync_warning(bool active);
 void motor_set_overheat_warning(bool active);
+void motor_set_stall_warning(bool active);
 
 /** @brief SET THE MOTOR INTO AN EMERGENCY STOP -> SET TARGET/ACTUAL STATE TO ESTOP AND TARGET SPEED TO 0 RPM*/
-void motor_trigger_estop();
+void motor_trigger_estop(void);
 
 // TARGETED SETTERS
 /** @brief SET THE DESIRED MOTOR RPM (STILL NEED TO SET THE TARGET STATE) */
@@ -88,6 +94,8 @@ void motor_set_target_position(int32_t degrees);
 uint8_t motor_get_full_status(void);
 bool motor_is_sync_bad(void);
 bool motor_is_overheated(void);
+bool motor_is_stall(void);
+
 // TELEMETRY
 int32_t motor_get_speed(void);
 int32_t motor_get_filtered_speed(void);

@@ -304,7 +304,6 @@ static void connected(struct bt_conn *conn, uint8_t err)
     }
     LOG_INF("BLE connected");
     first_heartbeat = true;   // Reset sync check for new connection
-    watchdog_kick();
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)

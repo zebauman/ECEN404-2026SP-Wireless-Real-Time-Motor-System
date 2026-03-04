@@ -27,7 +27,7 @@ int main(void)
     LOG_INF("Starting BLDC Hardware Motor Control Application");    
 
     // Initialize the Motor Data Structures (Safe API Vault)
-    motor_init(); 
+    motor_boot(); 
 
     // Initialize Real Hardware (PWM & ADC peripherals)
     int hw_err = bldc_driver_init();

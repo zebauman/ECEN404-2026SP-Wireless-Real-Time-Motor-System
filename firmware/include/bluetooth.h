@@ -44,8 +44,8 @@ typedef enum {
 
 /** Internal BLE state. Do not access directly outside bluetooth.c. */
 struct motor_app_ctx {
-    bool    notification_enabled;   // True once client subscribes to telemetry
-    uint8_t heartbeat_val;          // Last heartbeat counter value from phone
+    volatile bool    notification_enabled;   // True once client subscribes to telemetry
+    uint8_t          heartbeat_val;          // Last heartbeat counter value from phone
 };
 
 /* ========================================================================= *
