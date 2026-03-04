@@ -15,6 +15,9 @@
 #include "bldc_driver.h"
 #include "motor_control.h"
 
+#ifdef CONFIG_MOTOR_SIM
+#include "motor_sim.h"
+#endif
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -36,6 +39,10 @@ int main(void)
 
     // Start the Real Motor Control Threads (Commutation, Hall Monitor, PID)
     motor_control_init();
+
+    #ifdef CONFIG_MOTOR_SIM
+        motor_sim_init();
+    #endif
 
     // Initialize Bluetooth
     int err = bt_enable(bt_ready);

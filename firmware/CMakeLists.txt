@@ -13,6 +13,10 @@ target_sources(app PRIVATE
   src/motor_control/motor_control.c
   src/motor_control/pid.c
 
-  src/motor_control/bldc_driver.c
-  #src/simulation/bldc_driver_sim.c
 )
+
+if(CONFIG_MOTOR_SIM)
+  target_sources(app PRIVATE src/simulation/bldc_driver_sim.c)   # MOCK SIMULATION: NO HARDWARE FOR APP/BLE TESTING + PoC
+else()
+  target_sources(app PRIVATE src/motor_control/bldc_driver.c)       # REAL BLDC DRIVER WITH TIM1 AND HALL ISR
+endif()

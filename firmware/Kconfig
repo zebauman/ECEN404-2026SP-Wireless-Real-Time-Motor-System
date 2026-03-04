@@ -1,0 +1,11 @@
+mainmenu "BLDC Motor Controller"
+
+config MOTOR_SIM
+    bool "Use software motor simulation instead of real BLDC hardware"
+    default n
+    help
+      Replaces bldc_driver.c with motor_sim.c at build time.
+      Enables full PID + BLE testing without a physical motor.
+      Never enable in a production build.
+
+source "Kconfig.zephyr"

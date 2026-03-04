@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(bldc_driver, LOG_LEVEL_INF);
 //   60 / (50e-6 * POLE_PAIRS * 6) = ~25,000 RPM
 #define HALL_DEBOUNCE_US  50
 
+
 /* ========================================================================= *
  * GPIO DEFINITIONS (From DeviceTree Aliases)                                *
  * ========================================================================= */
