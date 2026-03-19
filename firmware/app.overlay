@@ -5,17 +5,15 @@
  * TIM1:  on APB2 — clock = 64 MHz (APB2 prescaler = 1, no x2 multiplier)
  *        ARR = 3200 → PWM freq = 64,000,000 / 3200 = 20 kHz  ✓
  *
- * NOTE: The original code had TIM1_ARR=1500 assuming a 30MHz clock.
- *       On the WB55 running at 64MHz with APB2 prescaler=1, ARR must be
- *       3200 to maintain 20kHz. Update TIM1_ARR in bldc_driver.c to 3200
- *       and the dead-time / RPM scale factor accordingly.
+ * Hall sensors remapped to PC0/PC1/PC3 (CN7 right side pins 28/30/36)
+ * Original PC2/PA0/PA1 replaced due to suspected GPIO damage.
  *
- * RPM scale factor with ARR=3200:
- *   bldc_percent_to_pulse: pulse = percent * (3200 / 100.0) = percent * 32.0f
- *   Update bldc_percent_to_pulse() in bldc_driver.c to use 32.0f instead of 15.0f
- *
- * Dead-time at 64MHz: 50 ticks = 50/64MHz = ~781ns — acceptable for most
- * gate drivers. Increase if your gate driver bootstrap needs more hold time.
+ * Physical connections on CN7 right side:
+ *   PC0 → CN7 pin 28  ← HU (yellow)
+ *   PC1 → CN7 pin 30  ← HV (white)
+ *   PC3 → CN7 pin 36  ← HW (green)
+ *   GND → CN7 pin 08
+ *   5V  → CN7 pin 18  (5V_EXT) for pull-up resistors and motor 5VO
  */
 
 / {
@@ -25,64 +23,52 @@
         hall-w = &hall_w_pin;
     };
 
-    /*
-     * Hall sensors as gpio-keys.
-     * Pull resistors are configured at runtime in bldc_driver.c via
-     * GPIO_INPUT | GPIO_PULL_UP. Do NOT duplicate pull flags here.
-     */
     hall_sensors {
         compatible = "gpio-keys";
 
         hall_u_pin: hall_u {
-            gpios = <&gpioc 2 GPIO_ACTIVE_HIGH>;  /* PC2 */
+            gpios = <&gpioc 2 GPIO_ACTIVE_HIGH>;  /* PC2 — CN7 pin 38 */
             label = "HALL_U";
         };
         hall_v_pin: hall_v {
-            gpios = <&gpioa 0 GPIO_ACTIVE_HIGH>;  /* PA0 */
+            gpios = <&gpioc 3 GPIO_ACTIVE_HIGH>;  /* PC3 — CN7 pin 36 */
             label = "HALL_V";
         };
         hall_w_pin: hall_w {
-            gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;  /* PA1 */
+            gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;  /* PA1 — CN7 pin 32 */
             label = "HALL_W";
         };
     };
 };
 
 /*
- * Clock tree for STM32WB55 (must match prj.conf RCC settings):
+ * Clock tree for STM32WB55:
  *   HSE = 32 MHz → PLL (×2) → SYSCLK = 64 MHz
  *   AHB  prescaler = 1 → HCLK  = 64 MHz
- *   APB1 prescaler = 1 → PCLK1 = 64 MHz  (TIM2/LPTIM used for Zephyr tick)
+ *   APB1 prescaler = 1 → PCLK1 = 64 MHz
  *   APB2 prescaler = 1 → PCLK2 = 64 MHz  (TIM1 lives here)
- *
- * On STM32WB55 the APB timer multiplier (×2) only activates when the APB
- * prescaler > 1. With prescaler = 1, TIM1 clock = PCLK2 = 64 MHz exactly.
  */
 &rcc {
     clocks = <&pll>;
     clock-frequency = <DT_FREQ_M(64)>;
     cpu1-prescaler  = <1>;
-    cpu2-prescaler  = <2>;   /* M0+ BLE coprocessor runs at 32 MHz */
+    cpu2-prescaler  = <2>;
     ahb4-prescaler  = <1>;
     apb1-prescaler  = <1>;
     apb2-prescaler  = <1>;
 };
 
 &pll {
-    div-m  = <2>;   /* HSE 32MHz / 2 = 16 MHz VCO input        */
-    mul-n  = <8>;   /* 16 MHz × 8   = 128 MHz VCO output       */
-    div-q  = <2>;   /* 128 / 2      = 64 MHz (USB/RNG clock)   */
-    div-r  = <2>;   /* 128 / 2      = 64 MHz SYSCLK            */
+    div-m  = <2>;
+    mul-n  = <8>;
+    div-q  = <2>;
+    div-r  = <2>;
     clocks = <&clk_hse>;
     status = "okay";
 };
 
 /*
  * TIM1 — Advanced Motor Control Timer @ 64 MHz
- *
- * The pwm child node exists only to trigger Zephyr's pinctrl driver to
- * configure AF muxing at boot. All register-level PWM control is done
- * directly in bldc_driver.c via the STM32 LL API.
  */
 &timers1 {
     status = "okay";
@@ -95,16 +81,6 @@
     };
 };
 
-/*
- * Pin multiplexing — TIM1 PWM outputs
- *
- * PA8/9/10  = high-side (CH1/2/3)
- * PB13/14/15 = low-side complementary (CH1N/2N/3N)
- *
- * drive-push-pull is correct for actively driven AF output pins.
- * Do NOT use bias-pull-down — it fights the active driver and
- * degrades gate drive switching edges.
- */
 &pinctrl {
 
     /* High-side switches */

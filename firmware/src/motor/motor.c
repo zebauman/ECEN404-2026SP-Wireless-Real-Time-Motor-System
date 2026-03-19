@@ -53,11 +53,6 @@ void motor_set_speed(int32_t rpm){
     k_mutex_lock(&m_stats_lock, K_FOREVER);
     m_stats.current_speed = rpm;    // SHOULD BE CORRECT VALUE SINCE PASSED DIRECTLY FROM MOTOR LOGIC
 
-    uint8_t curr_state = m_stats.motor_status & MOTOR_STATE_MASK;
-    if(curr_state != MOTOR_STATE_ESTOP) {
-        _motor_set_state(rpm != 0 ? MOTOR_STATE_RUNNING_SPEED : MOTOR_STATE_STOPPED);
-    }
-
     k_mutex_unlock(&m_stats_lock);
 }
 

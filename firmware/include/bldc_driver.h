@@ -47,4 +47,10 @@ uint32_t bldc_get_last_cycle_count(void);
  */
 void bldc_set_direction(int ccw);
 
+void bldc_set_bootstrap(void);
+
+void bldc_set_running(void);
+
+void bldc_set_commutation_with_duty(uint8_t hall_state, int pulse);
+
 #endif /* BLDC_DRIVER_H */
