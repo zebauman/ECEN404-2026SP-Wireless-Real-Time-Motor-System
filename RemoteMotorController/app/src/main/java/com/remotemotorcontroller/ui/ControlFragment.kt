@@ -14,6 +14,8 @@ import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.textfield.TextInputEditText
 import com.remotemotorcontroller.R
 import com.remotemotorcontroller.ble.BLEManager
+import com.remotemotorcontroller.log.TelemetryLogger
+import com.remotemotorcontroller.log.TelemetryRecord
 
 
 class ControlFragment : Fragment(R.layout.fragment_control) {
@@ -67,6 +69,8 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
 
         startStopMotorButton.setOnClickListener {
             if (!ControlUIState.isMotorRunning) { // MOTOR STARTING
+                TelemetryLogger.startLogging()
+
                 var rpm = targetRpmEditText.text.toString().toIntOrNull()
                 if (rpm != null) {
                     // COUNTER CLOCKWISE == NEGATIVE VALUES FOR MOTOR
@@ -86,6 +90,7 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
                     targetRpmEditText.error = "Invalid Number"
                 }
             } else { // MOTOR STOPPING
+                TelemetryLogger.stopLogging()
                 ControlUIState.isMotorRunning = false
                 setStartUi()
 

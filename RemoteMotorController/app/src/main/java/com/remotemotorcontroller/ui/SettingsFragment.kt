@@ -1,10 +1,12 @@
 package com.remotemotorcontroller.ui
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
@@ -12,6 +14,7 @@ import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
 import com.remotemotorcontroller.settings.SettingsRepository
 import com.remotemotorcontroller.R
+import com.remotemotorcontroller.log.TelemetryLogger
 import com.remotemotorcontroller.utils.hexToBytesOrNull
 import com.remotemotorcontroller.utils.toHex
 import kotlinx.coroutines.flow.first
@@ -22,6 +25,11 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
 
     private lateinit var repo: SettingsRepository
 
+    private val exportCsvLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")){
+        uri ->
+            uri?.let { saveDataToFile(it)}
+    }
+
     override fun onViewCreated(view:View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -30,6 +38,30 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         view.findViewById<View>(R.id.rowBleConfig).setOnClickListener{ showBleSheet() }
         view.findViewById<View>(R.id.rowARConfig).setOnClickListener { showArSheet() }
         view.findViewById<View>(R.id.rowAnalyConfig).setOnClickListener { showAnalySheet() }
+
+        view.findViewById<View>(R.id.rowExport).setOnClickListener {
+            TelemetryLogger.stopLogging()
+
+            val fileName = "MotorTelemetry_${System.currentTimeMillis()}.csv"
+            exportCsvLauncher.launch(fileName)
+        }
+    }
+
+    private fun saveDataToFile(uri: Uri){
+        try{
+            requireContext().contentResolver.openOutputStream(uri)?.use { outputStream ->
+                val csvData = TelemetryLogger.getCsvData()
+
+                outputStream.write(csvData.toByteArray())
+
+                Toast.makeText(requireContext(), "Data exported successfully!", Toast.LENGTH_SHORT).show()
+
+                TelemetryLogger.startLogging()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(requireContext(), "Failed to export data", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun showBleSheet(){

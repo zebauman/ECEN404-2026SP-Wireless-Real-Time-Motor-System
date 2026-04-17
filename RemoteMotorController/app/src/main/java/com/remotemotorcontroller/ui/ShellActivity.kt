@@ -16,6 +16,7 @@ import com.remotemotorcontroller.R
 import com.remotemotorcontroller.adapter.AnalyticsViewModel
 import com.remotemotorcontroller.ble.BLEManager
 import com.remotemotorcontroller.ble.BleState
+import com.remotemotorcontroller.log.TelemetryLogger
 import com.remotemotorcontroller.ui.widgets.DeviceHeader
 import com.remotemotorcontroller.ui.widgets.LiveSummaryView
 import kotlinx.coroutines.launch
@@ -78,11 +79,15 @@ class ShellActivity : AppCompatActivity() {
 
                 val telem = state.telemetry
                 if(telem != null){
+                    TelemetryLogger.log(telem)
+
                     liveSummary.isVisible = true
                     liveSummary.setRpm(telem.rpm)
                     liveSummary.setAngle(telem.angle)
                     liveSummary.setFlags(telem.rawFlags)
                     liveSummary.setState(telem.opState.displayName)
+
+
                 }else{
                     liveSummary.isVisible = false
                 }
