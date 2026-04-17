@@ -3,6 +3,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/atomic.h>
 #include <soc.h>
+#include <stm32wbxx.h>
 #include <stm32_ll_tim.h>
 #include <stm32_ll_bus.h>
 #include <zephyr/logging/log.h>
@@ -10,88 +11,107 @@
 LOG_MODULE_REGISTER(bldc_driver, LOG_LEVEL_INF);
 
 /* ========================================================================= *
- * HARDWARE CONSTANTS                                                        *
+ * HARDWARE CONSTANTS                                                         *
  * ========================================================================= */
 
-// STM32WB55 @ 64MHz, APB2 prescaler=1 → TIM1 = 64MHz
-// ARR=3200 → 20kHz PWM
-#define TIM1_ARR            3200
-#define DEADTIME_TICKS      50          // 50/64MHz = 781ns
-#define POLE_PAIRS          8
+/* STM32WB55 @ 32 MHz, PSC=0 → TIM1 = 32 MHz
+ * ARR = 32 000 000 / 21 000 ≈ 1523 → 21 kHz PWM                           */
+#define TIMER_CLOCK_HZ   32000000U
+#define TARGET_PWM_FREQ  21000U
+#define TIM1_ARR         (TIMER_CLOCK_HZ / TARGET_PWM_FREQ)   /* 1523       */
+#define DEADTIME_TICKS   8U           /* DEADTIME_TICKS / 32 MHz = 1 µs                 */
+#define POLE_PAIRS       4U            /* adjust to match your motor          */
 
-/* ── Debounce ──────────────────────────────────────────────────────────────
- * 5000us = hand winding
- * 50us   = real motor with IHM08M1 stacked
- * !! Change to 50 before stacking IHM08M1 !!                             */
-#define HALL_DEBOUNCE_US    50
+/* ── Duty cycle constants ───────────────────────────────────────────────── *
+ * BOOTSTRAP_DUTY: placed on the return-path (low-side) CCR during both     *
+ * standby and active commutation. At 95% ARR the complementary output      *
+ * fires for the remaining ~5%, keeping IHM08M1 bootstrap caps charged.     */
+#define BOOTSTRAP_DUTY  ((TIM1_ARR * 95) / 100)   /* 1447 — ~5% on-time    */
+#define SOFTSTART_DUTY  ((TIM1_ARR * 10) / 100)   /* 152 — 10%            */
+#define DUTY_TARGET     ((TIM1_ARR * 60) / 100)   /* 913 — 60% cruise     */
+#define DUTY_STEP       ((TIM1_ARR * 5) / 1000)  /* 7 — +0.5% / step   */
 
-/* ── Duty cycle constants ───────────────────────────────────────────────────
- * BOOTSTRAP_DUTY: CCR value that makes low-side complementary ON for ~5%
- *   of cycle, keeping IHM08M1 bootstrap caps charged when motor is stopped.
- *   Set to 95% of ARR so CHxN is active during the remaining 5%.
- *
- * SOFTSTART_DUTY / SOFTSTART_STEP: ramp from 10% → 15% on each hall edge
- *   before PID takes over. Prevents jerk on startup.                      */
-#define BOOTSTRAP_DUTY      ((TIM1_ARR * 95) / 100)   // 3040 counts
-#define SOFTSTART_DUTY      ((TIM1_ARR * 10) / 100)   //  320 counts
-#define SOFTSTART_STEP      ((TIM1_ARR *  1) / 100)   //   32 counts/edge
+/* ── Hall debounce ──────────────────────────────────────────────────────── */
+#define HALL_DEBOUNCE_US  1000U
+
+/* ── TIM2 free-running 1 MHz counter ────────────────────────────────────── *
+ * PSC = (32 MHz / 1 MHz) − 1 = 31                                          */
+#define TIM2_PRESCALER   31U
+#define TIMEOUT_TICKS    1000000U      /* 1 s @ 1 tick = 1 µs               */
+
+/* ── RPM: 8-sample circular buffer, TIM2 @ 1 MHz ────────────────────────── *
+ * RPM = 60 000 000 / (POLE_PAIRS × sum_of_8_deltas_µs)
+ * = RPM_CONSTANT_FILT / sum_delta                                       */
+#define HISTORY_SIZE       8U
+#define RPM_CONSTANT_FILT  (60000000UL / POLE_PAIRS)   /* 15 000 000        */
 
 /* ========================================================================= *
- * COMMUTATION LOOKUP TABLES                                                 *
+ * COMMUTATION LOOKUP TABLES  (active-HIGH hall sensors)                     *
  * ========================================================================= *
  *
- * Confirmed by observation: direct mapping (case==state) = CCW.
- * CCW sequence: 6→4→5→1→3→2→(repeat)
+ * comm 1 = W+V−   comm 2 = V+U−   comm 3 = W+U−
+ * comm 4 = U+W−   comm 5 = U+V−   comm 6 = V+W−
  *
- * Pin assignments:
- *   PA8 /CH1  = U+   PB13/CH1N = U-
- *   PA9 /CH2  = V+   PB14/CH2N = V-
- *   PA10/CH3  = W+   PB15/CH3N = W-
+ * Pin mapping:
+ * PA8 /CH1  = U+    PB13/CH1N = U−
+ * PA9 /CH2  = V+    PB14/CH2N = V−
+ * PA10/CH3  = W+    PB15/CH3N = W−
  *
- * CW = swap + and - on every pair:
- *   state 0x1 → case 6 (V+W-)    state 0x2 → case 5 (U+V-)
- *   state 0x3 → case 4 (U+W-)    state 0x4 → case 3 (W+U-)
- *   state 0x5 → case 2 (V+U-)    state 0x6 → case 1 (W+V-)
+ * CW  (counter_clockwise=false):
+ * hall→1:W+V−(1)  2:V+U−(2)  3:W+U−(3)  4:U+W−(4)  5:U+V−(5)  6:V+W−(6)
  *
- * CCW = direct mapping (case==state), confirmed working.                  */
-
-static const uint8_t cw_commutation[8] = {
-    0, 6, 5, 4, 3, 2, 1, 0
-};
-static const uint8_t ccw_commutation[8] = {
-    0, 1, 2, 3, 4, 5, 6, 0
-};
+ * CCW (counter_clockwise=true):
+ * hall→1:V+W−(6)  2:U+V−(5)  3:U+W−(4)  4:W+U−(3)  5:V+U−(2)  6:W+V−(1)
+ * ========================================================================= */
+static const uint8_t cw_commutation[8]  = { 0, 1, 2, 3, 4, 5, 6, 0 };
+static const uint8_t ccw_commutation[8] = { 0, 6, 5, 4, 3, 2, 1, 0 };
 
 /* ========================================================================= *
- * GPIO DEFINITIONS                                                          *
+ * GPIO                                                                       *
  * ========================================================================= */
 static const struct gpio_dt_spec hall_u = GPIO_DT_SPEC_GET(DT_ALIAS(hall_u), gpios);
 static const struct gpio_dt_spec hall_v = GPIO_DT_SPEC_GET(DT_ALIAS(hall_v), gpios);
 static const struct gpio_dt_spec hall_w = GPIO_DT_SPEC_GET(DT_ALIAS(hall_w), gpios);
 
 /* ========================================================================= *
- * STATE                                                                     *
+ * STATE                                                                      *
  * ========================================================================= */
-static struct gpio_callback hall_u_cb;
-static struct gpio_callback hall_v_cb;
-static struct gpio_callback hall_w_cb;
+static struct gpio_callback hall_port_a_cb;
+static struct gpio_callback hall_port_c_cb;
 
-atomic_t g_motor_speed_atomic     = ATOMIC_INIT(0);
-static atomic_t last_cycle_atomic = ATOMIC_INIT(0);
+atomic_t  g_motor_speed_atomic    = ATOMIC_INIT(0);
+static atomic_t last_cycle_atomic = ATOMIC_INIT(0);   /* for motor_control  */
 
-static volatile int  current_direction_ccw = 0;
-static volatile bool motor_running         = false;
-static volatile int  softstart_pulse       = SOFTSTART_DUTY;
+static volatile int   current_direction_ccw = 0;
+static volatile bool  motor_running         = false;
+static volatile int   active_duty           = SOFTSTART_DUTY;
+
+/* ── RPM circular buffer (written in ISR, read in control thread) ─────────  */
+static volatile uint32_t delta_history[HISTORY_SIZE];
+static volatile uint8_t  delta_idx      = 0;
+static volatile uint32_t previous_ticks = 0;   /* TIM2->CNT at last edge    */
 
 static void hall_isr_callback(const struct device *dev,
                                struct gpio_callback *cb, uint32_t pins);
 
 /* ========================================================================= *
- * INITIALIZATION                                                            *
+ * TIM2 FREE-RUNNING 1 MHz COUNTER                                           *
+ * ========================================================================= */
+static void setup_tim2_freerun(void)
+{
+    RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
+    TIM2->PSC      = TIM2_PRESCALER;   /* 32 MHz / 32 = 1 MHz               */
+    TIM2->ARR      = 0xFFFFFFFFU;      /* full 32-bit wrap-around            */
+    TIM2->EGR     |= TIM_EGR_UG;       /* load prescaler immediately         */
+    TIM2->CR1     |= TIM_CR1_CEN;
+}
+
+/* ========================================================================= *
+ * INITIALIZATION                                                             *
  * ========================================================================= */
 int bldc_driver_init(void)
 {
-    LOG_INF("Initializing BLDC driver...");
+    LOG_INF("Initializing BLDC driver (32 MHz / 21 kHz / ~1 µs dead-time)...");
 
     if (!gpio_is_ready_dt(&hall_u) ||
         !gpio_is_ready_dt(&hall_v) ||
@@ -100,17 +120,21 @@ int bldc_driver_init(void)
         return -ENODEV;
     }
 
-    // Active-low open-drain sensors — internal pull-up redundant but harmless
+    /* Active-HIGH hall sensors — no inversion, no internal pull-up needed   */
     gpio_pin_configure_dt(&hall_u, GPIO_INPUT | GPIO_PULL_UP);
     gpio_pin_configure_dt(&hall_v, GPIO_INPUT | GPIO_PULL_UP);
     gpio_pin_configure_dt(&hall_w, GPIO_INPUT | GPIO_PULL_UP);
-
+    
     int boot_state = bldc_read_hall_state();
     LOG_INF("Boot hall state: 0x%X  %s", boot_state,
             (boot_state == 0 || boot_state == 7)
             ? "*** INVALID — rotate shaft slightly ***" : "OK");
 
-    /* ── TIM1 ──────────────────────────────────────────────────────────── */
+    /* ── TIM2: 1 MHz free-running for RPM timing & stall timeout ─────────── */
+    setup_tim2_freerun();
+    previous_ticks = TIM2->CNT;
+
+    /* ── TIM1: 21 kHz complementary PWM ─────────────────────────────────── */
     LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_TIM1);
     LL_TIM_SetPrescaler(TIM1, 0);
     LL_TIM_SetAutoReload(TIM1, TIM1_ARR - 1);
@@ -124,7 +148,7 @@ int bldc_driver_init(void)
     LL_TIM_OC_EnablePreload(TIM1, LL_TIM_CHANNEL_CH2);
     LL_TIM_OC_EnablePreload(TIM1, LL_TIM_CHANNEL_CH3);
 
-    // Disabled channels driven LOW — prevents floating gate driver inputs
+    /* Disabled outputs driven LOW — prevents floating gate driver inputs     */
     LL_TIM_SetOffStates(TIM1, LL_TIM_OSSI_ENABLE, LL_TIM_OSSR_ENABLE);
     LL_TIM_OC_SetDeadTime(TIM1, DEADTIME_TICKS);
 
@@ -136,140 +160,132 @@ int bldc_driver_init(void)
     LL_TIM_EnableCounter(TIM1);
     LL_TIM_GenerateEvent_UPDATE(TIM1);
 
-    // Start in bootstrap state — charges IHM08M1 bootstrap caps
-    // Motor will not move until bldc_set_running() is called
+    /* Bootstrap: charge IHM08M1 caps before first start                     */
     bldc_set_bootstrap();
 
     atomic_set(&last_cycle_atomic, (atomic_val_t)k_cycle_get_32());
 
-    /* ── Hall interrupts ────────────────────────────────────────────────── */
+    /* ── Hall interrupts (Grouped by Port for efficiency) ───────────────── */
     gpio_pin_interrupt_configure_dt(&hall_u, GPIO_INT_EDGE_BOTH);
     gpio_pin_interrupt_configure_dt(&hall_v, GPIO_INT_EDGE_BOTH);
     gpio_pin_interrupt_configure_dt(&hall_w, GPIO_INT_EDGE_BOTH);
 
-    gpio_init_callback(&hall_u_cb, hall_isr_callback, BIT(hall_u.pin));
-    gpio_init_callback(&hall_v_cb, hall_isr_callback, BIT(hall_v.pin));
-    gpio_init_callback(&hall_w_cb, hall_isr_callback, BIT(hall_w.pin));
+    gpio_init_callback(&hall_port_c_cb, hall_isr_callback, BIT(hall_u.pin));
+    gpio_init_callback(&hall_port_a_cb, hall_isr_callback, BIT(hall_v.pin) | BIT(hall_w.pin));
 
-    gpio_add_callback_dt(&hall_u, &hall_u_cb);
-    gpio_add_callback_dt(&hall_v, &hall_v_cb);
-    gpio_add_callback_dt(&hall_w, &hall_w_cb);
+    gpio_add_callback(hall_u.port, &hall_port_c_cb);
+    gpio_add_callback(hall_v.port, &hall_port_a_cb); // Covers both V and W
 
-    LOG_INF("BLDC ready — 20kHz PWM  781ns dead-time  bootstrap active");
     return 0;
 }
 
 /* ========================================================================= *
- * BOOTSTRAP STATE (motor stopped)                                          *
+ * BOOTSTRAP STATE (motor stopped)                                           *
  * ========================================================================= *
- * All three low-side complementary outputs held ON at ~5% duty.
- * This keeps the IHM08M1 bootstrap capacitors charged continuously.
- * High-side outputs are disabled.
- * Must be called on stop/estop. Wait 100ms before calling bldc_set_running().*/
+ * All three complementary outputs held at BOOTSTRAP_DUTY (95% CCR).        *
+ * The CHxN pin fires for the remaining ~5%, charging bootstrap caps.        *
+ * High-side outputs are fully disabled.                                     */
 void bldc_set_bootstrap(void)
 {
-    motor_running   = false;
-    softstart_pulse = SOFTSTART_DUTY;
+    motor_running = false;
+    active_duty   = SOFTSTART_DUTY;
 
     TIM1->CCER &= ~(TIM_CCER_CC1E  | TIM_CCER_CC1NE |
                     TIM_CCER_CC2E  | TIM_CCER_CC2NE |
                     TIM_CCER_CC3E  | TIM_CCER_CC3NE);
 
-    // CCR at 95% → complementary outputs active for remaining 5%
-    TIM1->CCR1 = BOOTSTRAP_DUTY;
-    TIM1->CCR2 = BOOTSTRAP_DUTY;
-    TIM1->CCR3 = BOOTSTRAP_DUTY;
+    TIM1->CCR1 = 0;
+    TIM1->CCR2 = 0;
+    TIM1->CCR3 = 0;
 
-    // Enable only low-side complementary channels
     TIM1->CCER |= TIM_CCER_CC1NE | TIM_CCER_CC2NE | TIM_CCER_CC3NE;
     LL_TIM_GenerateEvent_UPDATE(TIM1);
 
-    LOG_INF("Bootstrap: low-sides active, high-sides off");
+    LOG_INF("Bootstrap: low-sides active (~5%%), high-sides off");
 }
 
 /* ========================================================================= *
- * MOTOR START                                                               *
+ * MOTOR START                                                                *
  * ========================================================================= */
 void bldc_set_running(void)
 {
-    softstart_pulse = SOFTSTART_DUTY;
-    motor_running   = true;
+    active_duty   = SOFTSTART_DUTY;
+    motor_running = true;
 
     uint8_t state = (uint8_t)bldc_read_hall_state();
     if (state != 0 && state != 7) {
-        bldc_set_commutation_with_duty(state, softstart_pulse);
-        LOG_INF("Motor start: hall=0x%X duty=%d", state, softstart_pulse);
+        bldc_set_commutation_with_duty(state, active_duty);
+        LOG_INF("Motor start: hall=0x%X duty=%d", state, active_duty);
     }
 }
 
 /* ========================================================================= *
- * HALL SENSOR ISR                                                           *
+ * HALL SENSOR ISR                                                            *
  * ========================================================================= */
 static void hall_isr_callback(const struct device *dev,
                                struct gpio_callback *cb, uint32_t pins)
 {
-    uint32_t now            = k_cycle_get_32();
-    uint32_t past           = (uint32_t)atomic_get(&last_cycle_atomic);
-    uint32_t dt_cycles      = now - past;
-    uint32_t cycles_per_sec = sys_clock_hw_cycles_per_sec();
+    uint32_t now   = TIM2->CNT;
+    uint32_t dt_us = now - previous_ticks;
 
-    uint32_t dt_us = (uint32_t)(((uint64_t)dt_cycles * 1000000U) / cycles_per_sec);
+    /* REJECT: Noise filter */
     if (dt_us < HALL_DEBOUNCE_US) return;
 
-    atomic_set(&last_cycle_atomic, (atomic_val_t)now);
+    /* REJECT: Physically impossible speed (e.g., > 5000 RPM) */
+    if (dt_us < (RPM_CONSTANT_FILT / 5000)) return;
+
+
+    /* ── Push delta to circular buffer ──────────────────────────────────── */
+    delta_history[delta_idx] = dt_us;
+    delta_idx = (delta_idx + 1) % HISTORY_SIZE;
+    previous_ticks = now;
+
+    /* ── Update kernel-cycle timestamp used by motor_control timeout ──────  */
+    atomic_set(&last_cycle_atomic, (atomic_val_t)k_cycle_get_32());
 
     uint8_t raw_step = (uint8_t)bldc_read_hall_state();
-    if (raw_step == 0 || raw_step == 7) return;
+    if (raw_step == 0 || raw_step == 7) return;   /* invalid sensor state   */
 
     if (!motor_running) {
         atomic_set(&g_motor_speed_atomic, 0);
         return;
     }
 
-    // Softstart ramp — each hall edge increments duty until PID takes over
-    if (softstart_pulse < bldc_percent_to_pulse(15.0f)) {
-        softstart_pulse += SOFTSTART_STEP;
+    /* ── Apply commutation at current active duty ────────────────────────── */
+    bldc_set_commutation_with_duty(raw_step, active_duty);
+
+    /* ── RPM: average the most recent inter-edge periods ─────────────────── */
+    uint32_t sum = 0;
+    for (int i = 0; i < HISTORY_SIZE; i++) {
+        sum += delta_history[i];
     }
-
-    // Apply commutation with correct duty for this step
-    bldc_set_commutation_with_duty(raw_step, softstart_pulse);
-
-    // RPM: 48 edges/rev (8 pole pairs × 6 steps)
-    // mech_rpm = (60 × cycles_per_sec) / (48 × dt_cycles)
-    //          = (cycles_per_sec × 5) / (dt_cycles × 4)
-    int32_t mech_rpm = (int32_t)(((uint64_t)cycles_per_sec * 5ULL)
-                                 / ((uint64_t)dt_cycles    * 4ULL));
-
+    int32_t rpm = (sum > 0) ? (int32_t)(RPM_CONSTANT_FILT / sum) : 0;
     atomic_set(&g_motor_speed_atomic,
-               (atomic_val_t)(current_direction_ccw ? -mech_rpm : mech_rpm));
+               (atomic_val_t)(current_direction_ccw ? -rpm : rpm));
 }
 
 /* ========================================================================= *
- * SENSOR READ                                                               *
+ * HALL STATE READ                                                            *
  * ========================================================================= */
 int bldc_read_hall_state(void)
 {
-    // Active-low open-drain — invert so 1 = sensor triggered = magnet aligned
-    int u = !gpio_pin_get_dt(&hall_u);
-    int v = !gpio_pin_get_dt(&hall_v);
-    int w = !gpio_pin_get_dt(&hall_w);
-    return (u << 2) | (v << 1) | w;
-}
+    uint8_t hu = gpio_pin_get_dt(&hall_u) ? 1 : 0;
+    uint8_t hv = gpio_pin_get_dt(&hall_v) ? 1 : 0;
+    uint8_t hw = gpio_pin_get_dt(&hall_w) ? 1 : 0;
+    
+    return (hu << 2) | (hv << 1) | hw;}
 
 /* ========================================================================= *
- * COMMUTATION WITH PER-STEP DUTY (from partner's working code)             *
+ * COMMUTATION WITH DUTY                                                      *
  * ========================================================================= *
- * High-side CCR  = pulse     → PWMs at requested duty cycle
- * Low-side CCR   = 0         → complementary output ON full cycle
- *                               provides solid return current path
- *
- * This is the key difference from the old approach of setting all CCRs
- * identically. Setting low-side CCR=0 ensures the return path is always
- * conducting when the high-side switches.                                  */
+ * High-side CCR  = pulse          → PWMs at requested duty                 *
+ * Low-side CCR   = BOOTSTRAP_DUTY → complementary fires ~5%, keeping       *
+ * IHM08M1 bootstrap caps topped up        *
+ * during active switching.                */
 void bldc_set_commutation_with_duty(uint8_t hall_state, int pulse)
 {
-    if (pulse > TIM1_ARR) pulse = TIM1_ARR;
-    if (pulse < 0)        pulse = 0;
+    if (pulse > (int)TIM1_ARR) pulse = (int)TIM1_ARR;
+    if (pulse < 0)             pulse = 0;
 
     uint8_t comm = current_direction_ccw
                    ? ccw_commutation[hall_state]
@@ -277,89 +293,123 @@ void bldc_set_commutation_with_duty(uint8_t hall_state, int pulse)
 
     unsigned int key = irq_lock();
 
-    // Clear all channel enables first
     TIM1->CCER &= ~(TIM_CCER_CC1E  | TIM_CCER_CC1NE |
                     TIM_CCER_CC2E  | TIM_CCER_CC2NE |
                     TIM_CCER_CC3E  | TIM_CCER_CC3NE);
 
+    // if(!motor_running){
+    //     TIM1->CCR1 = BOOTSTRAP_DUTY;
+    //     TIM1->CCR2 = BOOTSTRAP_DUTY;
+    //     TIM1->CCR3 = BOOTSTRAP_DUTY;
+    //     TIM1->CCR4 = TIM_CCER_CC1NE | TIM_CCER_CC2NE | TIM_CCER_CC3NE;
+    // }
+
     switch (comm) {
-        case 1: // W+ V-   PA10 high-side, PB14 low-side
-            TIM1->CCR3 = (uint32_t)pulse;   // W+ active duty
-            TIM1->CCR2 = 0;                 // V- full conduction
+        case 1: /* W+ V−   PA10 high, PB14 low */
+            TIM1->CCR3 = (uint32_t)pulse;
+            TIM1->CCR2 = BOOTSTRAP_DUTY;
             TIM1->CCER |= TIM_CCER_CC3E | TIM_CCER_CC2NE;
             break;
-        case 2: // V+ U-   PA9 high-side, PB13 low-side
-            TIM1->CCR2 = (uint32_t)pulse;   // V+ active duty
-            TIM1->CCR1 = 0;                 // U- full conduction
+        case 2: /* V+ U−   PA9  high, PB13 low */
+            TIM1->CCR2 = (uint32_t)pulse;
+            TIM1->CCR1 = BOOTSTRAP_DUTY;
             TIM1->CCER |= TIM_CCER_CC2E | TIM_CCER_CC1NE;
             break;
-        case 3: // W+ U-   PA10 high-side, PB13 low-side
-            TIM1->CCR3 = (uint32_t)pulse;   // W+ active duty
-            TIM1->CCR1 = 0;                 // U- full conduction
+        case 3: /* W+ U−   PA10 high, PB13 low */
+            TIM1->CCR3 = (uint32_t)pulse;
+            TIM1->CCR1 = BOOTSTRAP_DUTY;
             TIM1->CCER |= TIM_CCER_CC3E | TIM_CCER_CC1NE;
             break;
-        case 4: // U+ W-   PA8 high-side, PB15 low-side
-            TIM1->CCR1 = (uint32_t)pulse;   // U+ active duty
-            TIM1->CCR3 = 0;                 // W- full conduction
+        case 4: /* U+ W−   PA8  high, PB15 low */
+            TIM1->CCR1 = (uint32_t)pulse;
+            TIM1->CCR3 = BOOTSTRAP_DUTY;
             TIM1->CCER |= TIM_CCER_CC1E | TIM_CCER_CC3NE;
             break;
-        case 5: // U+ V-   PA8 high-side, PB14 low-side
-            TIM1->CCR1 = (uint32_t)pulse;   // U+ active duty
-            TIM1->CCR2 = 0;                 // V- full conduction
+        case 5: /* U+ V−   PA8  high, PB14 low */
+            TIM1->CCR1 = (uint32_t)pulse;
+            TIM1->CCR2 = BOOTSTRAP_DUTY;
             TIM1->CCER |= TIM_CCER_CC1E | TIM_CCER_CC2NE;
             break;
-        case 6: // V+ W-   PA9 high-side, PB15 low-side
-            TIM1->CCR2 = (uint32_t)pulse;   // V+ active duty
-            TIM1->CCR3 = 0;                 // W- full conduction
+        case 6: /* V+ W−   PA9  high, PB15 low */
+            TIM1->CCR2 = (uint32_t)pulse;
+            TIM1->CCR3 = BOOTSTRAP_DUTY;
             TIM1->CCER |= TIM_CCER_CC2E | TIM_CCER_CC3NE;
             break;
         default:
             LOG_ERR("bldc: invalid comm %u for hall 0x%X", comm, hall_state);
+            irq_unlock(key);
             return;
     }
 
     LL_TIM_GenerateEvent_UPDATE(TIM1);
-
     irq_unlock(key);
 }
 
 /* ========================================================================= *
- * PWM OUTPUT — called by PID thread after softstart completes              *
+ * bldc_set_pwm — update running duty from the control thread               *
  * ========================================================================= */
 void bldc_set_pwm(int pulse)
 {
     if (!motor_running) return;
-    if (softstart_pulse < bldc_percent_to_pulse(15.0f)) return;
 
-    // Once PID takes over, read current hall state and apply with new duty
+    active_duty = pulse;
+
     uint8_t state = (uint8_t)bldc_read_hall_state();
     if (state != 0 && state != 7) {
         bldc_set_commutation_with_duty(state, pulse);
     }
-
-    // Also update softstart tracker so ISR doesn't reset duty downward
-    if (pulse > softstart_pulse) {
-        softstart_pulse = pulse;
-    }
 }
 
 /* ========================================================================= *
- * LEGACY bldc_set_commutation — kept for any external callers              *
+ * bldc_softstart_step — call from control thread every STEP_DELAY_MS       *
+ * Advances active_duty by DUTY_STEP toward DUTY_TARGET.                    *
+ * Returns true when the ramp is complete.                                   *
+ * ========================================================================= */
+bool bldc_softstart_step(void)
+{
+    if (!motor_running)             return false;
+    if (active_duty >= DUTY_TARGET) return true;
+
+    active_duty += DUTY_STEP;
+    if (active_duty > DUTY_TARGET) active_duty = DUTY_TARGET;
+
+    uint8_t state = (uint8_t)bldc_read_hall_state();
+    if (state != 0 && state != 7) {
+        bldc_set_commutation_with_duty(state, active_duty);
+    }
+    return (active_duty >= DUTY_TARGET);
+}
+
+/* ========================================================================= *
+ * bldc_is_hall_timeout — true if no hall edge received for > 1 s           *
+ * ========================================================================= */
+bool bldc_is_hall_timeout(void)
+{
+    return (TIM2->CNT - previous_ticks) > TIMEOUT_TICKS;
+}
+
+/* ========================================================================= *
+ * bldc_get_duty_percent — current active duty as 0–100                     *
+ * ========================================================================= */
+uint32_t bldc_get_duty_percent(void)
+{
+    return ((uint32_t)active_duty * 100U) / TIM1_ARR;
+}
+
+/* ========================================================================= *
+ * LEGACY / CONVERSION HELPERS                                               *
  * ========================================================================= */
 void bldc_set_commutation(uint8_t step)
 {
-    bldc_set_commutation_with_duty(bldc_read_hall_state(), softstart_pulse);
+    bldc_set_commutation_with_duty((uint8_t)bldc_read_hall_state(), active_duty);
     (void)step;
 }
 
-/* ========================================================================= *
- * CONVERSION / GETTERS / SETTERS                                            *
- * ========================================================================= */
 int bldc_percent_to_pulse(float pct)
 {
-    int pulse = (int)(pct * 32.0f);    // 3200/100 = 32
-    if (pulse > TIM1_ARR) pulse = TIM1_ARR;
-    if (pulse < 0)        pulse = 0;
+    int pulse = (int)(pct * (float)(TIM1_ARR) / 100.0f);
+    if (pulse > (int)TIM1_ARR) pulse = (int)TIM1_ARR;
+    if (pulse < 0)             pulse = 0;
     return pulse;
 }
 

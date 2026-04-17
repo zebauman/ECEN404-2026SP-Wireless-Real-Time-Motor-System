@@ -27,15 +27,15 @@
         compatible = "gpio-keys";
 
         hall_u_pin: hall_u {
-            gpios = <&gpioc 2 GPIO_ACTIVE_HIGH>;  /* PC2 — CN7 pin 38 */
+            gpios = <&gpioc 2 GPIO_ACTIVE_HIGH>;  /* PC2 — CN7 pin 38 / CN8 pin 6 */
             label = "HALL_U";
         };
         hall_v_pin: hall_v {
-            gpios = <&gpioc 3 GPIO_ACTIVE_HIGH>;  /* PC3 — CN7 pin 36 */
+            gpios = <&gpioc 0 GPIO_ACTIVE_HIGH>;  /* PC0 — CN7 pin 28 / CN8 pin 1 */
             label = "HALL_V";
         };
         hall_w_pin: hall_w {
-            gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;  /* PA1 — CN7 pin 32 */
+            gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;  /* PA1 — CN7 pin 32 / CN8 pin 3 */
             label = "HALL_W";
         };
     };
@@ -111,3 +111,4 @@
         drive-push-pull;
     };
 };
+

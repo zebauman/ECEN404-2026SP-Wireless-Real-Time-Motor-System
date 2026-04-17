@@ -14,7 +14,7 @@ static void watchdog_expired(struct k_work *work){
     LOG_ERR("Watchdog Timer Expired - Connection Lost - HALTING MOTOR.");
 
     motor_set_sync_warning(true);
-    motor_trigger_estop();
+    // motor_trigger_estop();
     
     LOG_INF("MOTOR HALTED");
 }

@@ -44,12 +44,15 @@ int main(void)
         motor_sim_init();
     #endif
 
-    // Initialize Bluetooth
-    int err = bt_enable(bt_ready);
+    // Initialize Bluetooth IN BLOCKING MODE
+    LOG_INF("Waking up M0+ Bluetooth Coprocessor...");
+    int err = bt_enable(NULL);
     if (err) {
         LOG_ERR("Bluetooth init failed (err %d)", err);
         return 0;
     }
+    
+    bt_ready(err);
 
     // Register Callbacks & Start Watchdog
     bt_conn_cb_register(&conn_callbacks);

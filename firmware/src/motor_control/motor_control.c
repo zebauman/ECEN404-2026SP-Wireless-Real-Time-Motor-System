@@ -20,7 +20,7 @@ LOG_MODULE_REGISTER(motor_control, LOG_LEVEL_INF);
 
 #define HALL_TIMEOUT_MS     100U
 #define STALL_TIMEOUT_MS    5000U
-#define RPM_FILTER_ALPHA    0.3f
+#define RPM_FILTER_ALPHA    0.05f
 
 #define LOG_EVERY_N_TICKS   100
 
@@ -52,11 +52,11 @@ static void pid_control_thread(void *p1, void *p2, void *p3)
             1000U / PID_PERIOD_MS, STACK_SIZE);
 
     pid_init(&rpm_pid,
-             /* kp */             0.05f,
-             /* ki */             0.01f,
-             /* integral_limit */ 500.0f,
+             /* kp */             0.3f,
+             /* ki */             0.04f,
+             /* integral_limit */ 2000.0f,
              /* out_min */        6.0f,
-             /* out_max */        96.0f);
+             /* out_max */        95.0f);
 
     uint32_t log_tick    = 0;
     uint8_t  last_state  = 0xFF;  // tracks transitions for bootstrap/start
@@ -95,7 +95,7 @@ static void pid_control_thread(void *p1, void *p2, void *p3)
                     (int32_t)filtered_rpm,
                     target_rpm,
                     elapsed_ms,
-                    motor_get_full_status(),
+                    target_state,
                     stall_ms);
         }
 
@@ -116,9 +116,9 @@ static void pid_control_thread(void *p1, void *p2, void *p3)
         /* ── 8. PID output or safe shutdown ──────────────────────────────── */
         if (target_state == MOTOR_STATE_RUNNING_SPEED) {
 
-            // On transition INTO running — fire softstart
             if (last_state != MOTOR_STATE_RUNNING_SPEED) {
                 last_state = MOTOR_STATE_RUNNING_SPEED;
+                pid_reset(&rpm_pid);
                 bldc_set_running();
                 LOG_INF("Motor START — softstart initiated");
             }

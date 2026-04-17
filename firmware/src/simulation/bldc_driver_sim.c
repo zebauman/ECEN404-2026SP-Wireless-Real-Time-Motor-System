@@ -115,14 +115,14 @@ static void sim_thread_fn(void *p1, void *p2, void *p3)
 
 int bldc_driver_init(void)
 {
-    LOG_INF("================================================");
-    LOG_INF("  MOCK BLDC DRIVER — NO HARDWARE WILL ACTUATE  ");
-    LOG_INF("  ARR=%-4d  PULSE_ZERO=%-3d  RPM/TICK=%.1f     ",
-            TIM1_ARR, PULSE_ZERO, (double)RPM_PER_TICK);
-    LOG_INF("  Max RPM: %.0f  Ramp: %d RPM per %dms         ",
-            (double)((TIM1_ARR - PULSE_ZERO) * RPM_PER_TICK),
-            RPM_RAMP_PER_TICK, SIM_PERIOD_MS);
-    LOG_INF("================================================");
+    // LOG_INF("================================================");
+    // LOG_INF("  MOCK BLDC DRIVER — NO HARDWARE WILL ACTUATE  ");
+    // LOG_INF("  ARR=%-4d  PULSE_ZERO=%-3d  RPM/TICK=%.1f     ",
+    //         TIM1_ARR, PULSE_ZERO, (double)RPM_PER_TICK);
+    // LOG_INF("  Max RPM: %.0f  Ramp: %d RPM per %dms         ",
+    //         (double)((TIM1_ARR - PULSE_ZERO) * RPM_PER_TICK),
+    //         RPM_RAMP_PER_TICK, SIM_PERIOD_MS);
+    // LOG_INF("================================================");
 
     atomic_set(&sim_last_cycle_atomic, (atomic_val_t)k_cycle_get_32());
     return 0;
@@ -140,8 +140,8 @@ void motor_sim_init(void)
                     SIM_PRIO, 0, K_NO_WAIT);
 
     k_thread_name_set(&sim_thread_data, "hall_sim");
-    LOG_INF("Hall sim thread started (prio=%d period=%dms ramp=%d RPM/tick)",
-            SIM_PRIO, SIM_PERIOD_MS, RPM_RAMP_PER_TICK);
+    // LOG_INF("Hall sim thread started (prio=%d period=%dms ramp=%d RPM/tick)",
+    //         SIM_PRIO, SIM_PERIOD_MS, RPM_RAMP_PER_TICK);
 }
 
 void bldc_set_pwm(int pulse)
@@ -157,11 +157,11 @@ void bldc_set_pwm(int pulse)
     static int last_logged = -999;
     if (abs(pulse - last_logged) > 10) {
         last_logged = pulse;
-        LOG_INF("[SIM PWM] pulse=%4d (%4.1f%%) actual_rpm=%-5d target_rpm=%-5d",
-                pulse,
-                (double)(pulse * 100.0f / TIM1_ARR),
-                (int32_t)atomic_get(&g_motor_speed_atomic),
-                motor_get_target_speed());
+        // LOG_INF("[SIM PWM] pulse=%4d (%4.1f%%) actual_rpm=%-5d target_rpm=%-5d",
+        //         pulse,
+        //         (double)(pulse * 100.0f / TIM1_ARR),
+        //         (int32_t)atomic_get(&g_motor_speed_atomic),
+        //         motor_get_target_speed());
     }
 }
 
@@ -171,7 +171,7 @@ void bldc_set_commutation(uint8_t step)
     if (step != last_step) {
         last_step = step;
         if (step != 0 && step != 7) {
-            LOG_DBG("[SIM COMM] step=%u (%s)", step, step > 8 ? "CCW" : "CW");
+            // LOG_DBG("[SIM COMM] step=%u (%s)", step, step > 8 ? "CCW" : "CW");
         }
     }
 }
