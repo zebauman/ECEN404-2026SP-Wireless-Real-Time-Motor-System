@@ -15,4 +15,24 @@ object BLEContract {
     const val CMD_CALIBRATE: Byte = 0x01
     const val CMD_SPEED:     Byte = 0x02
     const val CMD_POSITION:  Byte = 0x03
+
+    const val MOTOR_STATE_MASK = 0x0F
+    const val MOTOR_FLAG_MASK  = 0xF0
+
+    object MotorState {
+        const val STOPPED       = 0x00
+
+        const val RUNNING_SPEED = 0x01
+        const val RUNNING_POS   = 0x02
+        const val ESTOP         = 0x03
+        const val RESTART       = 0x04
+        const val FAULT         = 0x05
+    }
+
+    // Flags are Ints
+    object MotorFlag {
+        const val SYNC_BAD = 0x10
+        const val OVERHEAT = 0x20
+        const val STALL    = 0x40
+    }
 }
