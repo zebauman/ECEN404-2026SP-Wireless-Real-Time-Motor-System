@@ -79,15 +79,17 @@ class ShellActivity : AppCompatActivity() {
                 val telem = state.telemetry
                 if(telem != null){
                     liveSummary.isVisible = true
-                    liveSummary.setRpm(state.telemetry.rpm)
-                    liveSummary.setAngle(state.telemetry.angle)
+                    liveSummary.setRpm(telem.rpm)
+                    liveSummary.setAngle(telem.angle)
+                    liveSummary.setFlags(telem.rawFlags)
+                    liveSummary.setState(telem.opState.displayName)
                 }else{
                     liveSummary.isVisible = false
                 }
 
             }
             is BleState.Connecting -> {
-                deviceHeader.setConnectionTitle(getString(R.string.status_connecting)) // "Connecting..."
+                deviceHeader.setConnectionTitle(getString(R.string.status_connecting))
                 deviceHeader.setSubtitle("")
                 deviceHeader.setDisconnectVisible(false)
                 liveSummary.isVisible = false
