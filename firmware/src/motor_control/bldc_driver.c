@@ -32,7 +32,7 @@ LOG_MODULE_REGISTER(bldc_driver, LOG_LEVEL_INF);
 #define DUTY_STEP       ((TIM1_ARR * 5) / 1000)  /* 7 — +0.5% / step   */
 
 /* ── Hall debounce ──────────────────────────────────────────────────────── */
-#define HALL_DEBOUNCE_US  1000U
+#define HALL_DEBOUNCE_US  20U
 
 /* ── TIM2 free-running 1 MHz counter ────────────────────────────────────── *
  * PSC = (32 MHz / 1 MHz) − 1 = 31                                          */
@@ -63,8 +63,8 @@ LOG_MODULE_REGISTER(bldc_driver, LOG_LEVEL_INF);
  * CCW (counter_clockwise=true):
  * hall→1:V+W−(6)  2:U+V−(5)  3:U+W−(4)  4:W+U−(3)  5:V+U−(2)  6:W+V−(1)
  * ========================================================================= */
-static const uint8_t cw_commutation[8]  = { 0, 1, 2, 3, 4, 5, 6, 0 };
-static const uint8_t ccw_commutation[8] = { 0, 6, 5, 4, 3, 2, 1, 0 };
+static const uint8_t cw_commutation[8]  = { 0, 4, 1, 3, 2, 5, 6, 0 }; 
+static const uint8_t ccw_commutation[8] = { 0, 6, 5, 2, 3, 1, 4, 0 };
 
 /* ========================================================================= *
  * GPIO                                                                       *
@@ -215,7 +215,6 @@ void bldc_set_running(void)
     uint8_t state = (uint8_t)bldc_read_hall_state();
     if (state != 0 && state != 7) {
         bldc_set_commutation_with_duty(state, active_duty);
-        LOG_INF("Motor start: hall=0x%X duty=%d", state, active_duty);
     }
 }
 
@@ -282,64 +281,63 @@ int bldc_read_hall_state(void)
  * Low-side CCR   = BOOTSTRAP_DUTY → complementary fires ~5%, keeping       *
  * IHM08M1 bootstrap caps topped up        *
  * during active switching.                */
-void bldc_set_commutation_with_duty(uint8_t hall_state, int pulse)
-{
-    if (pulse > (int)TIM1_ARR) pulse = (int)TIM1_ARR;
-    if (pulse < 0)             pulse = 0;
+void bldc_set_commutation_with_duty(uint8_t hall_state, uint32_t pulse) {
+    uint32_t key = irq_lock();
 
-    uint8_t comm = current_direction_ccw
-                   ? ccw_commutation[hall_state]
-                   : cw_commutation[hall_state];
+    // 1. Enforce 6% - 95% Hardware Safety Limits
+    uint32_t min_pulse = (TIM1_ARR * 6) / 100;
+    uint32_t max_pulse = (TIM1_ARR * 95) / 100;
 
-    unsigned int key = irq_lock();
+    if (pulse < min_pulse) pulse = min_pulse;
+    if (pulse > max_pulse) pulse = max_pulse;
 
-    TIM1->CCER &= ~(TIM_CCER_CC1E  | TIM_CCER_CC1NE |
-                    TIM_CCER_CC2E  | TIM_CCER_CC2NE |
-                    TIM_CCER_CC3E  | TIM_CCER_CC3NE);
+    // 2. Map Hall state to 6-step sequence
+    uint8_t comm = current_direction_ccw ? ccw_commutation[hall_state & 0x07] 
+                                         : cw_commutation[hall_state & 0x07];
 
-    // if(!motor_running){
-    //     TIM1->CCR1 = BOOTSTRAP_DUTY;
-    //     TIM1->CCR2 = BOOTSTRAP_DUTY;
-    //     TIM1->CCR3 = BOOTSTRAP_DUTY;
-    //     TIM1->CCR4 = TIM_CCER_CC1NE | TIM_CCER_CC2NE | TIM_CCER_CC3NE;
-    // }
+    // 3. Reset all High-sides to 0 before switching (Safety)
+    TIM1->CCR1 = 0;
+    TIM1->CCR2 = 0;
+    TIM1->CCR3 = 0;
 
-    switch (comm) {
-        case 1: /* W+ V−   PA10 high, PB14 low */
-            TIM1->CCR3 = (uint32_t)pulse;
-            TIM1->CCR2 = BOOTSTRAP_DUTY;
-            TIM1->CCER |= TIM_CCER_CC3E | TIM_CCER_CC2NE;
-            break;
-        case 2: /* V+ U−   PA9  high, PB13 low */
-            TIM1->CCR2 = (uint32_t)pulse;
-            TIM1->CCR1 = BOOTSTRAP_DUTY;
-            TIM1->CCER |= TIM_CCER_CC2E | TIM_CCER_CC1NE;
-            break;
-        case 3: /* W+ U−   PA10 high, PB13 low */
-            TIM1->CCR3 = (uint32_t)pulse;
-            TIM1->CCR1 = BOOTSTRAP_DUTY;
-            TIM1->CCER |= TIM_CCER_CC3E | TIM_CCER_CC1NE;
-            break;
-        case 4: /* U+ W−   PA8  high, PB15 low */
-            TIM1->CCR1 = (uint32_t)pulse;
-            TIM1->CCR3 = BOOTSTRAP_DUTY;
-            TIM1->CCER |= TIM_CCER_CC1E | TIM_CCER_CC3NE;
-            break;
-        case 5: /* U+ V−   PA8  high, PB14 low */
-            TIM1->CCR1 = (uint32_t)pulse;
-            TIM1->CCR2 = BOOTSTRAP_DUTY;
-            TIM1->CCER |= TIM_CCER_CC1E | TIM_CCER_CC2NE;
-            break;
-        case 6: /* V+ W−   PA9  high, PB15 low */
-            TIM1->CCR2 = (uint32_t)pulse;
-            TIM1->CCR3 = BOOTSTRAP_DUTY;
-            TIM1->CCER |= TIM_CCER_CC2E | TIM_CCER_CC3NE;
-            break;
-        default:
-            LOG_ERR("bldc: invalid comm %u for hall 0x%X", comm, hall_state);
-            irq_unlock(key);
-            return;
-    }
+    /* Ensure all CCRs are 0 initially to avoid shorts */
+TIM1->CCR1 = 0; TIM1->CCR2 = 0; TIM1->CCR3 = 0;
+
+switch (comm) {
+    case 1: /* U+ V− */
+        TIM1->CCR1 = pulse;     // U High (PWM)
+        TIM1->CCR2 = max_pulse; // V Low (95% ON)
+        TIM1->CCER = (TIM_CCER_CC1E | TIM_CCER_CC2NE);
+        break;
+    case 2: /* U+ W− */
+        TIM1->CCR1 = pulse;     // U High
+        TIM1->CCR3 = max_pulse; // W Low
+        TIM1->CCER = (TIM_CCER_CC1E | TIM_CCER_CC3NE);
+        break;
+    case 3: /* V+ W− */
+        TIM1->CCR2 = pulse;     // V High
+        TIM1->CCR3 = max_pulse; // W Low
+        TIM1->CCER = (TIM_CCER_CC2E | TIM_CCER_CC3NE);
+        break;
+    case 4: /* V+ U− */
+        TIM1->CCR2 = pulse;     // V High
+        TIM1->CCR1 = max_pulse; // U Low
+        TIM1->CCER = (TIM_CCER_CC2E | TIM_CCER_CC1NE);
+        break;
+    case 5: /* W+ U− */
+        TIM1->CCR3 = pulse;     // W High
+        TIM1->CCR1 = max_pulse; // U Low
+        TIM1->CCER = (TIM_CCER_CC3E | TIM_CCER_CC1NE);
+        break;
+    case 6: /* W+ V− */
+        TIM1->CCR3 = pulse;     // W High
+        TIM1->CCR2 = max_pulse; // V Low
+        TIM1->CCER = (TIM_CCER_CC3E | TIM_CCER_CC2NE);
+        break;
+    default:
+        TIM1->CCER = 0; 
+        break;
+}
 
     LL_TIM_GenerateEvent_UPDATE(TIM1);
     irq_unlock(key);

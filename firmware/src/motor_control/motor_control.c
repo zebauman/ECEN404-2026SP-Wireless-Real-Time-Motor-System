@@ -15,12 +15,12 @@ LOG_MODULE_REGISTER(motor_control, LOG_LEVEL_INF);
 #define STACK_SIZE          2048
 #define PRIO_PID            5
 
-#define PID_PERIOD_MS       10
-#define DT                  0.01f
+#define PID_PERIOD_MS       2
+#define DT                  0.002f
 
 #define HALL_TIMEOUT_MS     100U
 #define STALL_TIMEOUT_MS    5000U
-#define RPM_FILTER_ALPHA    0.05f
+#define RPM_FILTER_ALPHA    0.3f
 
 #define LOG_EVERY_N_TICKS   100
 
@@ -49,8 +49,6 @@ static void reset_control_state(void)
  * ========================================================================= */
 static void pid_control_thread(void *p1, void *p2, void *p3)
 {
-    LOG_INF("PID control thread started - %u Hz, stack %u bytes",
-            1000U / PID_PERIOD_MS, STACK_SIZE);
 
     pid_init(&rpm_pid,
              /* kp */             0.3f,
@@ -86,19 +84,7 @@ static void pid_control_thread(void *p1, void *p2, void *p3)
         /* ── 5. Read target ──────────────────────────────────────────────── */
         uint8_t target_state = motor_get_target_state();
         int32_t target_rpm   = motor_get_target_speed();
-
-        /* ── 6. Periodic status log ──────────────────────────────────────── */
-        if (++log_tick >= LOG_EVERY_N_TICKS) {
-            log_tick = 0;
-            LOG_INF("[PID] raw=%6d  filt=%6d  tgt=%6d  "
-                    "hall_age=%5ums  state=0x%02X  stall=%ums",
-                    raw_rpm,
-                    (int32_t)filtered_rpm,
-                    target_rpm,
-                    elapsed_ms,
-                    target_state,
-                    stall_ms);
-        }
+        bldc_set_direction(target_rpm < 0);
 
         /* ── 7. Stall detection ──────────────────────────────────────────── */
         if (target_rpm != 0 && raw_rpm == 0) {
@@ -120,6 +106,11 @@ static void pid_control_thread(void *p1, void *p2, void *p3)
             if (last_state != MOTOR_STATE_RUNNING_SPEED) {
                 last_state = MOTOR_STATE_RUNNING_SPEED;
                 pid_reset(&rpm_pid);
+
+                bldc_set_bootstrap();
+
+                k_msleep(10);
+                
                 bldc_set_running();
                 LOG_INF("Motor START — softstart initiated");
             }
@@ -127,8 +118,8 @@ static void pid_control_thread(void *p1, void *p2, void *p3)
             k_mutex_lock(&pid_lock, K_FOREVER);
 
             float duty = pid_compute(&rpm_pid,
-                                     (float)target_rpm,
-                                     filtered_rpm,
+                                     fabsf((float)target_rpm),
+                                     fabsf(filtered_rpm),
                                      DT);
             k_mutex_unlock(&pid_lock);
 

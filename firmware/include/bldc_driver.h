@@ -51,6 +51,5 @@ void bldc_set_bootstrap(void);
 
 void bldc_set_running(void);
 
-void bldc_set_commutation_with_duty(uint8_t hall_state, int pulse);
-
+void bldc_set_commutation_with_duty(uint8_t hall_state, uint32_t pulse);
 #endif /* BLDC_DRIVER_H */
