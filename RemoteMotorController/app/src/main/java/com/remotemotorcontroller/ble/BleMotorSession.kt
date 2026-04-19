@@ -44,7 +44,7 @@ class BleMotorSession(
     fun setSpeed(rpm: Int) = sendCommand(BLEContract.CMD_SPEED, rpm)
     fun setPosition(pos: Int) = sendCommand(BLEContract.CMD_POSITION, pos)
     fun calibrate() = sendCommand(BLEContract.CMD_CALIBRATE, 0)
-    fun shutdown() = sendCommand(BLEContract.CMD_SHUTDOWN, 0, BleRequestQueue.PRIORITY_CRITICAL)
+    fun shutdown() = sendCommand(BLEContract.CMD_SHUTDOWN, 0, priority = BleRequestQueue.PRIORITY_CRITICAL)
 
     fun sendHeartBeat(count: Int){
 
