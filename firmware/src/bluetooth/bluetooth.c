@@ -11,6 +11,7 @@
 #include "bluetooth.h"
 #include "watchdog.h"
 #include "motor.h"
+#include "motor_control.h"
 
 LOG_MODULE_REGISTER(bluetooth, LOG_LEVEL_INF);
 
@@ -109,6 +110,21 @@ static ssize_t write_motor(struct bt_conn *conn,
             break;
         case MOTOR_MODE_OFF:
             motor_set_target_speed(0);
+            break;
+        case MOTOR_MODE_SET_KP:
+            float new_kp;
+            memcpy(&new_kp, &val, sizeof(float));
+            motor_control_set_kp(new_kp);
+            break;
+        case MOTOR_MODE_SET_KI:
+            float new_ki;
+            memcpy(&new_ki, &val, sizeof(float));
+            motor_control_set_ki(new_ki);
+            break;
+        case MOTOR_MODE_SET_ILIMIT:
+            float new_iLimit;
+            memcpy(&new_iLimit, &val, sizeof(float));
+            motor_control_set_ilimit(new_iLimit);
             break;
         default:
             LOG_WRN("Unknown motor command: 0x%02X", cmd);

@@ -7,4 +7,8 @@
  */
 int motor_control_init(void);
 
+void motor_control_set_kp(float kp);
+void motor_control_set_ki(float ki);
+void motor_control_set_ilimit(float iLimit);
+
 #endif

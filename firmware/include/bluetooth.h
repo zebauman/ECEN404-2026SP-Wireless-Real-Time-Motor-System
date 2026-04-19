@@ -32,10 +32,13 @@
  * Sent as the first byte of a write to the CMD characteristic.             *
  * ========================================================================= */
 typedef enum {
-    MOTOR_MODE_OFF      = 0x00,
-    MOTOR_MODE_INIT     = 0x01,
-    MOTOR_MODE_SPEED    = 0x02,
-    MOTOR_MODE_POSITION = 0x03,
+    MOTOR_MODE_OFF          = 0x00,
+    MOTOR_MODE_INIT         = 0x01,
+    MOTOR_MODE_SPEED        = 0x02,
+    MOTOR_MODE_POSITION     = 0x03,
+    MOTOR_MODE_SET_KP       = 0x04,
+    MOTOR_MODE_SET_KI       = 0x05,
+    MOTOR_MODE_SET_ILIMIT   = 0x06
 } motor_cmd_t;
 
 /* ========================================================================= *

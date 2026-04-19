@@ -31,6 +31,7 @@ static struct k_thread pid_thread_data;
  * INTERNAL STATE                                                            *
  * ========================================================================= */
 static pid_struct   rpm_pid;
+static struct k_mutex pid_lock;
 static float        filtered_rpm = 0.0f;
 static uint32_t     stall_ms     = 0;
 
@@ -122,11 +123,15 @@ static void pid_control_thread(void *p1, void *p2, void *p3)
                 bldc_set_running();
                 LOG_INF("Motor START — softstart initiated");
             }
+            
+            k_mutex_lock(&pid_lock, K_FOREVER);
 
             float duty = pid_compute(&rpm_pid,
                                      (float)target_rpm,
                                      filtered_rpm,
                                      DT);
+            k_mutex_unlock(&pid_lock);
+
             bldc_set_pwm(bldc_percent_to_pulse(duty));
 
         } else {
@@ -153,6 +158,8 @@ int motor_control_init(void)
 {
     LOG_INF("Initializing Motor Control...");
 
+    k_mutex_init(&pid_lock);
+
     k_thread_create(&pid_thread_data, pid_stack,
                     K_THREAD_STACK_SIZEOF(pid_stack),
                     pid_control_thread, NULL, NULL, NULL,
@@ -161,4 +168,26 @@ int motor_control_init(void)
     k_thread_name_set(&pid_thread_data, "pid_ctrl");
 
     return 0;
+}
+
+void motor_control_set_kp(float kp){
+    k_mutex_lock(&pid_lock, K_FOREVER);
+    rpm_pid.kp = kp;
+    k_mutex_unlock(&pid_lock);
+}
+void motor_control_set_ki(float ki){
+    k_mutex_lock(&pid_lock, K_FOREVER);
+    rpm_pid.ki = ki;
+    k_mutex_unlock(&pid_lock);
+}
+void motor_control_set_ilimit(float iLimit){
+    k_mutex_lock(&pid_lock, K_FOREVER);
+    rpm_pid.integral_limit = iLimit;
+
+    if(rpm_pid.integral > iLimit){
+        rpm_pid.integral = iLimit;
+    } else if( rpm_pid.integral < -iLimit){
+        rpm_pid.integral = -iLimit;
+    }
+    k_mutex_unlock(&pid_lock);
 }
