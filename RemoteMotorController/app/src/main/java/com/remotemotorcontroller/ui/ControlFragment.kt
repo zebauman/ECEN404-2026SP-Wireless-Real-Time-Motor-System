@@ -32,6 +32,12 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
 
     private lateinit var angleToggleGroup: MaterialButtonToggleGroup
 
+    private lateinit var kiEditText: TextInputEditText
+    private lateinit var kpEditText: TextInputEditText
+    private lateinit var imaxEditText: TextInputEditText
+    private lateinit var updateConstraintsButton: Button
+
+
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -46,7 +52,20 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
         rpmToggleGroup = view.findViewById(R.id.toggleRpmDirection)
         angleToggleGroup = view.findViewById(R.id.toggleAngleDirection)
 
-        restoreUiState()
+        kiEditText = view.findViewById(R.id.inputKi)
+        kpEditText = view.findViewById(R.id.inputKp)
+        imaxEditText = view.findViewById(R.id.inputILimit)
+        updateConstraintsButton = view.findViewById(R.id.buttonUpdateConstants)
+
+        kpEditText.doAfterTextChanged {
+            ControlUIState.kpInput = it.toString()
+        }
+        kiEditText.doAfterTextChanged {
+            ControlUIState.kiInput = it.toString()
+        }
+        imaxEditText.doAfterTextChanged {
+            ControlUIState.imaxInput = it.toString()
+        }
 
         targetRpmEditText.doAfterTextChanged {
             ControlUIState.rpmInput = it.toString()
@@ -54,6 +73,8 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
         targetAngleEditText.doAfterTextChanged {
             ControlUIState.angleInput = it.toString()
         }
+
+        restoreUiState()
 
         rpmToggleGroup.addOnButtonCheckedListener{ _, checkedId, isChecked ->
             if (isChecked) ControlUIState.isRpmCcw = (checkedId == R.id.btnRpmCcw)
@@ -111,11 +132,33 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
             }
         }
 
+        updateConstraintsButton.setOnClickListener {
+            var kp = kpEditText.text.toString().toFloatOrNull()
+            var ki = kiEditText.text.toString().toFloatOrNull()
+            var iMax = imaxEditText.text.toString().toFloatOrNull()
+
+            if(kp == null){
+                kpEditText.setText("0.3")
+                kp = 0.3F
+            }
+            if(ki == null){
+                kiEditText.setText("0.04")
+                ki = 0.04F
+            }
+            if(iMax == null) {
+                imaxEditText.setText("2000")
+                iMax = 2000F
+            }
+            BLEManager.activeSession?.sendPidTuning(kp,ki,iMax)
+        }
     }
 
     private fun restoreUiState(){
         targetRpmEditText.setText(ControlUIState.rpmInput)
         targetAngleEditText.setText(ControlUIState.angleInput)
+        kiEditText.setText(ControlUIState.kiInput)
+        kpEditText.setText(ControlUIState.kpInput)
+        imaxEditText.setText(ControlUIState.imaxInput)
 
         if(ControlUIState.isRpmCcw){
             rpmToggleGroup.check(R.id.btnRpmCcw)
