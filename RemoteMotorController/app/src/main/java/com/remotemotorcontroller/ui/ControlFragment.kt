@@ -63,7 +63,7 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
         }
 
         calibrateButton.setOnClickListener {
-            BLEManager.calibrate()
+            BLEManager.activeSession?.calibrate()
             Toast.makeText(requireContext(), "Calibrating...", Toast.LENGTH_SHORT).show()
         }
 
@@ -80,7 +80,7 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
 
                     ControlUIState.isMotorRunning = true
                     setStopUi()
-                    BLEManager.setSpeed(rpm)
+                    BLEManager.activeSession?.setSpeed(rpm)
                     Toast.makeText(
                         requireContext(),
                         "Starting motor at $rpm RPM",
@@ -94,7 +94,7 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
                 ControlUIState.isMotorRunning = false
                 setStartUi()
 
-                BLEManager.shutdown()
+                BLEManager.activeSession?.shutdown()
                 Toast.makeText(requireContext(), "Stopping motor", Toast.LENGTH_SHORT).show()
             }
         }
@@ -104,7 +104,7 @@ class ControlFragment : Fragment(R.layout.fragment_control) {
                 if(angleToggleGroup.checkedButtonId == R.id.btnAngleCcw){
                     angle = -angle
                 }
-                BLEManager.setPosition(angle)
+                BLEManager.activeSession?.setPosition(angle)
                 Toast.makeText(requireContext(), "Moving to $angle degrees", Toast.LENGTH_SHORT).show()
             } else {
                 targetAngleEditText.error = "Invalid Number"

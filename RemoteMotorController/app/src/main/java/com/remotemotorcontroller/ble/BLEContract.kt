@@ -15,6 +15,9 @@ object BLEContract {
     const val CMD_CALIBRATE: Byte = 0x01
     const val CMD_SPEED:     Byte = 0x02
     const val CMD_POSITION:  Byte = 0x03
+    const val CMD_SET_KP:    Byte = 0x04
+    const val CMD_SET_KI:    Byte = 0x05
+    const val CMD_SET_ILIMIT:Byte = 0x06
 
     const val MOTOR_STATE_MASK = 0x0F
     const val MOTOR_FLAG_MASK  = 0xF0

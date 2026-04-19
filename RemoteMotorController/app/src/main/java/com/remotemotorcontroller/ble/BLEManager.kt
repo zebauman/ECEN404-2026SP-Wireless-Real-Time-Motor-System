@@ -60,6 +60,8 @@ object BLEManager {
     private var userInitDisconnect: Boolean = false
 
     private var requestQueue: BleRequestQueue? = null
+    var activeSession: BleMotorSession? = null
+        private set
 
     // CONFIGURED WITH SETTINGS TO LOCAL VARIABLES
     private var autoReconnectEnabled = true
@@ -124,6 +126,7 @@ object BLEManager {
             else if(newState == BluetoothProfile.STATE_DISCONNECTED){
                 _state.value = BleState.Disconnected
 
+                activeSession = null
                 gatt.close()
                 bluetoothGatt = null
                 requestQueue?.clear()
@@ -149,6 +152,10 @@ object BLEManager {
                 charHeartbeat = serv.getCharacteristic(BLEContract.CHAR_HEARTBEAT)
 
                 charTelem?.let{ enableNotifications(gatt, it)}
+
+                requestQueue?.let { queue ->
+                    activeSession = BleMotorSession(gatt, queue)
+                }
 
                 startHeartbeatLoop()
 
@@ -227,7 +234,7 @@ object BLEManager {
             var counter = 0
             while (isActive) {
                 // Send heartbeat (incrementing counter or fixed value)
-                sendHeartbeat(counter)
+                activeSession?.sendHeartBeat(counter)
 
                 // Increment and wrap around byte size (0-255) if needed
                 counter = (counter + 1) % 255
@@ -235,82 +242,6 @@ object BLEManager {
                 delay(1000L) // Adjust this interval based on firmware requirements
             }
         }
-    }
-
-    // --- COMMANDS ---
-    private fun createPayload(cmd: Byte, value: Int): ByteArray {
-        return byteArrayOf(
-            cmd,
-            (value and 0xFF).toByte(),
-            ((value shr 8) and 0xFF).toByte(),
-            ((value shr 16) and 0xFF).toByte(),
-            ((value shr 24) and 0xFF).toByte()
-        )
-    }
-
-    // LOW PRIORITY, DEFAULT (ACK) - USER REQUEST
-    fun setSpeed(rpm: Int){
-        val ch = charCmd ?: return
-        val payload = createPayload(BLEContract.CMD_SPEED, rpm)
-
-        requestQueue?.enqueueWrite(
-            characteristic = ch,
-            data = payload,
-            writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
-            priority = BleRequestQueue.PRIORITY_LOW
-        )
-    }
-
-    // LOW PRIORITY, DEFAULT (ACK) - USER REQUEST
-    fun setPosition(pos: Int){
-        val ch = charCmd ?: return
-        val payload = createPayload(BLEContract.CMD_POSITION, pos)
-
-        requestQueue?.enqueueWrite(
-            characteristic = ch,
-            data = payload,
-            writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
-            priority = BleRequestQueue.PRIORITY_LOW
-        )
-    }
-
-    // LOW PRIORITY, DEFAULT (ACK) - USER REQUEST
-    fun calibrate(){
-        val ch = charCmd ?: return
-        val payload = createPayload(BLEContract.CMD_CALIBRATE, 0)
-
-        requestQueue?.enqueueWrite(
-            characteristic = ch,
-            data = payload,
-            writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
-            priority = BleRequestQueue.PRIORITY_LOW
-        )
-    }
-
-    // CRITICAL PRIORITY, DEFAULT (ACK) - SAFETY CRITICAL (MUST HAPPEN NOW AND BE CONFIRMED)
-    fun shutdown(){
-        val ch = charCmd ?: return
-        val payload = createPayload(BLEContract.CMD_SHUTDOWN, 0)
-
-        requestQueue?.enqueueWrite(
-            characteristic = ch,
-            data = payload,
-            writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
-            priority = BleRequestQueue.PRIORITY_CRITICAL
-        )
-    }
-
-    // HIGH PRIORITY (SOLVES STARVATION PROBLEM), NO RESPONSE - MAINTAINS THE CONNECTION
-    fun sendHeartbeat(heartBeatVal: Int){
-        val ch = charHeartbeat ?: return
-        val payload = byteArrayOf(heartBeatVal.toByte())
-
-        requestQueue?.enqueueWrite(
-            characteristic = ch,
-            data = payload,
-            writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
-            priority = BleRequestQueue.PRIORITY_HIGH
-        )
     }
 
     // --- SCANNING & CONNECTION ---
