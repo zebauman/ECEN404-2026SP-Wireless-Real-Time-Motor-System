@@ -1,0 +1,8 @@
+Removed Pin From Net: NetName=GND Pin=Barrel2-1
+Removed Pin From Net: NetName=GND Pin=Barrel2-2
+Removed Pin From Net: NetName=GND Pin=Barrel2-3
+Removed Pin From Net: NetName=GND Pin=Cin2-1
+Removed Pin From Net: NetName=GND Pin=U3.3V-2
+Removed Member From Class: ClassName=404pcb5v Member=Barrel2
+Added Pin To Net: NetName=NetBarrel1_1 Pin=Cin2-1
+Added Pin To Net: NetName=NetBarrel1_1 Pin=U3.3V-2
