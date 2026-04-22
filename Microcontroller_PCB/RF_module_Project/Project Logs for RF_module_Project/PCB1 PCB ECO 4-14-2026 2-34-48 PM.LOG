@@ -1,0 +1,5 @@
+Change Component Designator: OldDesignator=L? NewDesignator=L1.8
+Change Component Designator: OldDesignator=L? NewDesignator=L2.7
+Change Net Name : Old Net Name=NetL?_1 New Net Name=NetL1.8_1
+Added Member To Class: ClassName=Rf schematic Member=Component L1.8 LQG15HN1N8C02D
+Added Member To Class: ClassName=Rf schematic Member=Component smd antenna

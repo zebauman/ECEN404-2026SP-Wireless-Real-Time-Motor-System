@@ -1,0 +1,42 @@
+Change Component Designator: OldDesignator=MD1 NewDesignator=MD?
+Added Component: Designator=J?(FP-U_FL-R-SMT-1_10-MFG)
+Add component (AddParameter): Name = "Body Material"; Value = "Bronze"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Body Plating"; Value = "Silver"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Connector Type"; Value = "Coaxial"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Contact Material"; Value = "Brass"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Contact Plating"; Value = "Gold"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Depth"; Value = "3.1mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Dielectric Material"; Value = "Polymer"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Fastening Type"; Value = "Snap"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Frequency"; Value = "6GHz"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Gender"; Value = "Male"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Housing Color"; Value = "Beige"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Impedance"; Value = "50R"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Insulation Resistance"; Value = "500MR"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Lead Free"; Value = "Lead Free"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Length"; Value = "3mm"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Frequency"; Value = "6GHz"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Max Operating Temperature"; Value = "90°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Min Operating Temperature"; Value = "-40°C"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Mount"; Value = "Surface Mount"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Orientation"; Value = "Straight"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Package Quantity"; Value = "2500"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Packaging"; Value = "Cut Tape"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Radiation Hardening"; Value = "No"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "REACH SVHC"; Value = "No SVHC"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Series"; Value = "U.FL"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Termination"; Value = "Solder"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Weight"; Value = "0.001764oz"; VariantName = "[No Variations]"
+Add component (AddParameter): Name = "Wire/Cable Type"; Value = "Coaxial"; VariantName = "[No Variations]"
+Added Pin To Net: NetName=GND Pin=J?-2
+Added Pin To Net: NetName=GND Pin=J?-3
+Added Pin To Net: NetName=GND Pin=MD?-A2
+Added Pin To Net: NetName=GND Pin=MD?-B1
+Added Pin To Net: NetName=GND Pin=MD?-B2
+Added Pin To Net: NetName=GND Pin=MD?-B3
+Added Net: Name=GND
+Added Pin To Net: NetName=NetJ?_1 Pin=J?-1
+Added Pin To Net: NetName=NetJ?_1 Pin=MD?-A3
+Added Net: Name=NetJ?_1
+Added Member To Class: ClassName=Rf schematic Member=Component J? U.FL-R-SMT-1(10)
+Added Rule: Name=Schematic Supply Nets
