@@ -20,7 +20,7 @@ LOG_MODULE_REGISTER(motor_control, LOG_LEVEL_INF);
 
 #define HALL_TIMEOUT_MS     100U
 #define STALL_TIMEOUT_MS    5000U
-#define RPM_FILTER_ALPHA    0.3f
+#define RPM_FILTER_ALPHA    0.05f
 
 #define LOG_EVERY_N_TICKS   100
 

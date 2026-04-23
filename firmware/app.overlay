@@ -8,12 +8,6 @@
  * Hall sensors remapped to PC0/PC1/PC3 (CN7 right side pins 28/30/36)
  * Original PC2/PA0/PA1 replaced due to suspected GPIO damage.
  *
- * Physical connections on CN7 right side:
- *   PC0 → CN7 pin 28  ← HU (yellow)
- *   PC1 → CN7 pin 30  ← HV (white)
- *   PC3 → CN7 pin 36  ← HW (green)
- *   GND → CN7 pin 08
- *   5V  → CN7 pin 18  (5V_EXT) for pull-up resistors and motor 5VO
  */
 
 / {
